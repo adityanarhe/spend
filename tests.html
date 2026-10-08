@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Spend tests</title>
+  <style>
+    body { font: 14px/1.4 -apple-system, system-ui, sans-serif; margin: 16px; background: #fff; color: #000; }
+    @media (prefers-color-scheme: dark) { body { background: #000; color: #fff; } }
+    .pass { color: #34c759; } .fail { color: #ff3b30; } code { font-size: 12px; opacity: .7; }
+  </style>
+</head>
+<body>
+  <h1 id="summary">Running…</h1>
+  <div id="out"></div>
+  <script src="parsers.js"></script>
+  <script>
+    // Each case: input text → the fields we expect out. Synthetic examples now; real redacted
+    // samples get added here as they arrive (they decide whether a DRAFT pattern is right).
+    const cases = [
+      ['UPI alert email', () => parseHdfcAlert('Dear Customer, Rs.450.00 has been debited from account **1234 to VPA swiggy@icici SWIGGY on 08-10-26. Your UPI transaction reference number is 627812345678.'),
+        { account: 'hdfc_upi', amount: 450, name: 'SWIGGY', date: '2026-10-08', ref: '627812345678', category: 'Food' }],
+      ['UPI alert email (REAL sample, redacted)', () => parseHdfcAlert(`Dear Customer,
+
+Greetings from HDFC Bank!
+
+Rs.80.00 is debited from your account ending 05xx towards VPA citymetro.payu@axisbank (City Metro Rail Corporation Ltd) on 08-10-26.
+
+UPI transaction reference no.: 1234509876xx.
+
+If you did not authorize this transaction, please report it immediately at:
+a. When in India (Toll free): 1800 258 6161`),
+        { account: 'hdfc_upi', amount: 80, name: 'City Metro Rail Corporation Ltd', date: '2026-10-08', ref: '1234509876', category: 'Transport' }],
+      ['UPI alert email (REAL format, with digits, no bracket name)', () => parseHdfcAlert('Rs.450.00 is debited from your account ending 0512 towards VPA swiggy@icici on 08-10-26.\n\nUPI transaction reference no.: 123450987612.'),
+        { amount: 450, name: 'swiggy@icici', ref: '123450987612', category: 'Food' }],
+      ['UPI alert, Instamart', () => parseHdfcAlert('Rs.1,212.50 has been debited from account **1234 to VPA swiggyinstamart@icici Swiggy Instamart on 07-10-26.'),
+        { amount: 1212.5, category: 'Groceries', date: '2026-10-07' }],
+      ['CC alert email (older)', () => parseHdfcAlert('Thank you for using your HDFC Bank Credit Card ending 4321 for Rs 2,999.00 at AMAZON PAY INDIA on 05-10-2026 21:14:09. Authorization code:- 123456'),
+        { account: 'hdfc_cc', amount: 2999, name: 'AMAZON PAY INDIA', date: '2026-10-05', time: '21:14:09', category: 'Shopping' }],
+      ['CC alert email (newer)', () => parseHdfcAlert('Rs.349.00 is debited from your HDFC Bank Credit Card ending 4321 towards UBER INDIA on 06 Oct, 2026 at 09:02:11.'),
+        { account: 'hdfc_cc', amount: 349, name: 'UBER INDIA', date: '2026-10-06', category: 'Transport' }],
+      ['CC alert email (REAL sample, digits redacted)', () => parseHdfcAlert('Dear Customer,\n\nGreetings from HDFC Bank.\n\nWe would like to inform you that Rs. 4599.00 has been debited from your HDFC Bank Credit Card ending towards ASSPL on 08 Oct, 2026 at 11:59:39.\nTo check your available balance, outstanding amount, or view recent transactions, you may use:'),
+        { account: 'hdfc_cc', amount: 4599, name: 'ASSPL', date: '2026-10-08', time: '11:59:39', category: 'Shopping' }],
+      ['CC alert email (REAL format, with digits)', () => parseHdfcAlert('Rs. 4599.00 has been debited from your HDFC Bank Credit Card ending 4321 towards ASSPL on 08 Oct, 2026 at 11:59:39.'),
+        { account: 'hdfc_cc', amount: 4599, name: 'ASSPL', date: '2026-10-08' }],
+      ['Credit alert is ignored', () => parseHdfcAlert('Rs.50,000.00 has been credited to your account **1234 by NEFT.'), null],
+      ['Unknown debit is flagged', () => parseHdfcAlert('Your a/c was debited for INR 100 via some new format'), 'unrecognised'],
+      ['UPI SMS', () => parseHdfcSms('Sent Rs.120.00 From HDFC Bank A/C *1234 To CHAI POINT On 08/10/26 Ref 627899999999 Not You? Call 18002586161'),
+        { account: 'hdfc_upi', amount: 120, name: 'CHAI POINT', date: '2026-10-08', ref: '627899999999' }],
+      ['CC SMS', () => parseHdfcSms('Spent Rs.560 On HDFC Bank Card 4321 At ZOMATO On 2026-10-08:13:45:00 Bal Rs.1000'),
+        { account: 'hdfc_cc', amount: 560, name: 'ZOMATO', date: '2026-10-08', time: '13:45:00', category: 'Food' }],
+      ['Swiggy food email', () => parseSwiggyEmail('Order No: 198765432101\nRestaurant: Example Biryani House\nChicken Biryani x 1 ₹ 380\nGulab Jamun x 2 ₹ 120\nGrand Total: ₹ 548.00', 'Your Swiggy order summary', '2026-10-08'),
+        { orderId: '198765432101', kind: 'food', total: 548, place: 'Example Biryani House' }, o => o.items.length === 2 && o.items[1].qty === 2],
+      ['Instamart email', () => parseSwiggyEmail('Order ID: 55554444333\n2 x Amul Milk 500ml ₹ 58\nBread ₹ 45 x 1\nOrder Total ₹1,212.50', 'Your Instamart order is delivered', '2026-10-07'),
+        { kind: 'instamart', total: 1212.5 }],
+      ['Instamart email (REAL sample)', () => parseSwiggyEmail([
+        'Swiggy', 'Greetings from Instamart👋', 'Your Instamart order id: 10000000001xxx1 was successfully delivered.', ' ',
+        'Deliver To:', ' ', 'xxx', ' ', 'Order Items', '1 x Brand Mandarin Orange\t₹99.00', "2 x Organic Lady's Finger (Okra)\t₹64.00",
+        '2 x High Protein Paneer\t₹200.97', '1 x Cabbage (Green)\t₹16.00', '1 x Brand Green Chilli\t₹12.00',
+        '2 x Onion (Red)\t₹132.00', '1 x Green Capsicum (Large)\t₹17.00', '1 x Coriander Leaves\t₹8.00', ' ',
+        'Order Summary', 'Item Bill\t₹548.97', 'Handling Fee\t₹12.00', 'Delivery Partner Fee\t₹0.00', 'Grand Total\t₹562.00',
+      ].join('\n'), 'Your Instamart order was successfully delivered', '2026-10-08'),
+        { total: 562, kind: 'instamart', orderId: '10000000001' /* digits before the redacted xxx */, date: '2026-10-08' },
+        o => o.items.length === 8 && o.items.reduce((s, i) => s + i.qty, 0) === 11 /* "11 items from Swiggy" */ && o.items[5].name === 'Onion (Red)' && o.items[5].qty === 2 && o.items[5].price === 132
+          && Math.abs(o.items.reduce((s, i) => s + i.price, 0) - 548.97) < 0.01],
+      ...[['tabs', '\t'], ['spaces (as HTML→text gives it)', ' ']].map(([label, sep]) => [`Swiggy food email (REAL sample, ${label})`, () => parseSwiggyEmail([
+        'Greetings from Swiggy', '', 'Your order was delivered in 40 minutes! Rate this timely delivery here', '', '',
+        'Order No:', '', '2000000000xxxxx', 'Restaurant', '', 'Example Biryani House', '', '', 'Your Order Summary:', '', '',
+        'Order No: 20000000002xxx', '', 'Order placed at: Wednesday, December 31, 2025 9:21 PM', '',
+        'Order delivered at: Wednesday, December 31, 2025 10:02 PM', '', 'Order Status: Delivered', '', 'Ordered from:', '',
+        'Example Biryani House', '1 Example Road, Sample Nagar, Example City 100001', '', 'Delivery To: xxxx', '', '',
+        ['Item Name', 'Quantity', 'Price'].join(sep), ['Paneer 65', '1', '₹ 360'].join(sep), ['Paneer Biryani', '2', '₹ 730'].join(sep),
+        ['House Chicken 555', '2', '₹ 1440'].join(sep), ['-House Chicken 555', '₹ 720'].join(sep),
+        ['Chicken Boneless Biryani', '3', '₹ 1080'].join(sep), ['Item Total:', '₹ 3610.00'].join(sep),
+        ['Restaurant Packaging:', '₹ 120.00'].join(sep), ['Platform Fee:', '₹ 14.99'].join(sep),
+        ['Delivery Fee (FREE with Swiggy One):', 'FREE'].join(sep), ['Extra discount for you:', '- ₹ 20.00'].join(sep),
+        ['Taxes:', '₹ 186.50'].join(sep), ['Paid Via Credit/Debit card:', '₹ 3911.00'].join(sep), ['Order Total:', '₹ 3911'].join(sep),
+        'The link to rate your delivery experience is only valid for mobile devices.', '',
+        'Disclaimer: Attached is the invoice for the restaurant services provided by the outlet. For items not covered in the attached invoice, the outlet shall be responsible to issue an invoice directly to you.',
+      ].join('\n'), 'Your Swiggy order was delivered before time', '2026-01-01'),
+        { kind: 'food', total: 3911, place: 'Example Biryani House', date: '2025-12-31', time: '21:21' },
+        o => o.items.length === 4 && o.items[0].name === 'Paneer 65' && o.items[2].name === 'House Chicken 555' && o.items[2].qty === 2
+          && o.items.reduce((s, i) => s + i.price, 0) === 3610 && !!o.orderId]),
+      ['Bank CSV', () => parseBankCsv(
+        'Date,Narration,Value Dat,Debit Amount,Credit Amount,Chq/Ref Number,Closing Balance\n' +
+        '08/10/26,UPI-SWIGGY-swiggy@icici-ICIC0DC0099-627812345678-UPI,08/10/26,450.00,0.00,0000627812345678,10000.00\n' +
+        '08/10/26,NEFT CR-SALARY,08/10/26,0.00,50000.00,N123,60000.00\n' +
+        '09/10/26,CC 000412345XXXX4321 AUTOPAY SI-TAD,09/10/26,15000.00,0.00,0000,45000.00'),
+        null, r => r.length === 2 && r[0].name === 'SWIGGY' && r[0].ref === '627812345678' && r[0].confirmed && r[1].category === 'Card bill'],
+      ['CC statement lines', () => parseCcStatementLines([
+        'Date & Time Transaction Description Amount',
+        '05/10/2026 21:14:09 AMAZON PAY INDIA 2,999.00',
+        '06/10/2026 UBER INDIA 349.00',
+        '07/10/2026 AMAZON REFUND 499.00 Cr',
+        '10/10/2026 NETBANKING TRANSFER (Ref# 123) 15,000.00 Cr']),
+        null, r => r.length === 3 && r[0].amount === 2999 && r[2].amount === -499],
+      ['Dates', () => [P.date('08-10-26'), P.date('08/10/2026'), P.date('8 Oct, 2026'), P.date('2026-10-08:12:00')],
+        null, r => r.every(d => d === '2026-10-08')],
+      ['Rules beat keywords', () => P.categorize('SWIGGY', { SWIGGY: 'Groceries' }), null, r => r === 'Groceries'],
+    ];
+
+    let pass = 0;
+    const out = document.getElementById('out');
+    for (const [name, run, expect, check] of cases) {
+      let ok, got;
+      try {
+        got = run();
+        ok = (expect === null || expect === 'unrecognised' || typeof expect !== 'object')
+          ? (check ? check(got) : got === expect)
+          : got && typeof got === 'object' && Object.entries(expect).every(([k, v]) => got[k] === v) && (!check || check(got));
+      } catch (e) { ok = false; got = e.message; }
+      if (ok) pass++;
+      out.insertAdjacentHTML('beforeend', `<p class="${ok ? 'pass' : 'fail'}">${ok ? '✓' : '✗'} ${name}${ok ? '' : `<br><code>${JSON.stringify(got)}</code>`}</p>`);
+    }
+    document.getElementById('summary').textContent = `${pass} / ${cases.length} passed`;
+    document.title = `${pass}/${cases.length} passed`;
+  </script>
+</body>
+</html>

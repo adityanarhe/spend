@@ -1,0 +1,5 @@
+# Real statements/emails never go into git
+samples/
+*.pdf
+*.csv
+spend-backup-*.json
