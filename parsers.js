@@ -48,10 +48,16 @@ const P = {
     return `${yr}-${String(mon).padStart(2, '0')}-${m[1].padStart(2, '0')}`;
   },
 
-  categorize(name, rules = {}) {
+  // HTML emails converted to text carry invisible characters (zero-width, non-breaking spaces) and
+  // odd spacing/line breaks. Patterns match words, so flatten all of that to single plain spaces first.
+  clean: text => String(text).replace(/[​-‏⁠﻿­]/g, '').replace(/\s+/g, ' ').trim(),
+
+  categorize(name, rules = {}, vpa = '') {
     const k = P.key(name);
     if (rules[k]) return rules[k];
     for (const [word, cat] of KEYWORDS) if (k.includes(word)) return cat;
+    // Phone-number UPI IDs (9876543210@ybl, q90000000xx@ybl) belong to people, not shops.
+    if (/^[a-z]?\d[\dx]{7,}@/i.test(vpa)) return 'People';
     return 'Other';
   },
 
@@ -90,6 +96,7 @@ const ALERT_PATTERNS = [
 
 // Returns a txn, null (not a spend email, ignore), or 'unrecognised' (looks like a spend but no pattern matched).
 function parseHdfcAlert(text, rules) {
+  text = P.clean(text);
   for (const p of ALERT_PATTERNS) {
     const m = text.match(p.re);
     if (!m) continue;
@@ -98,7 +105,7 @@ function parseHdfcAlert(text, rules) {
     // "UPI transaction reference no.: 123450987612." (confirmed) or "reference number is 1234..."
     const ref = (text.match(/reference (?:number|no\.?)\s*(?:is)?\s*:?\s*(\d{6,})/i) || [])[1] || null;
     return P.txn({ origin: 'alert', account: p.account, amount: f.amount, name: f.name, date: f.date,
-      time: f.time || null, ref, category: P.categorize(f.vpa ? `${f.name} ${f.vpa}` : f.name, rules) });
+      time: f.time || null, ref, category: P.categorize(f.vpa ? `${f.name} ${f.vpa}` : f.name, rules, f.vpa) });
   }
   return /debited|spent|thank you for using/i.test(text) ? 'unrecognised' : null;
 }
@@ -118,6 +125,7 @@ const SMS_PATTERNS = [
 ];
 
 function parseHdfcSms(text, rules) {
+  text = P.clean(text);
   for (const p of SMS_PATTERNS) {
     const m = text.match(p.re);
     if (!m) continue;

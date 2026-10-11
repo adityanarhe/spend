@@ -70,7 +70,7 @@ function bars(days, highlight) {
 }
 
 // Donut of spend by category, drawn with a CSS conic-gradient (no chart library).
-function pie(list) {
+function pie(list, caption) {
   const slices = CATEGORIES.filter(c => !c.excluded)
     .map(c => ({ ...c, total: sum(list.filter(t => t.category === c.name)) }))
     .filter(c => c.total > 0).sort((a, b) => b.total - a.total);
@@ -79,7 +79,7 @@ function pie(list) {
   const stops = slices.map(c => `${c.color} ${(at / total) * 360}deg ${((at += c.total) / total) * 360}deg`).join(', ');
   return `<div class="pie">
     <div class="donut" style="background:${total ? `conic-gradient(${stops})` : 'var(--fill)'}">
-      <div><b>${money(total)}</b><span>7 days</span></div>
+      <div><b>${money(total)}</b><span>${esc(caption)}</span></div>
     </div>
     <div class="legend">${slices.map(c => `
       <div><i style="background:${c.color}"></i><span>${c.name}</span><b>${Math.round((c.total / total) * 100)}%</b></div>`).join('')
@@ -87,10 +87,25 @@ function pie(list) {
   </div>`;
 }
 
+// Bar/pie choice is remembered per screen ('today', 'month').
 const chartPref = {
-  get() { try { return localStorage.getItem('chart') || 'bar'; } catch { return 'bar'; } },
-  set(v) { try { localStorage.setItem('chart', v); } catch {} },
+  get(screen) { try { return localStorage.getItem(`chart-${screen}`) || 'bar'; } catch { return 'bar'; } },
+  set(screen, v) { try { localStorage.setItem(`chart-${screen}`, v); } catch {} },
 };
+
+// A chart card with the bar/pie toggle pinned top-right.
+function chartCard(screen, barsHtml, pieHtml) {
+  const mode = chartPref.get(screen);
+  return `<div class="group chart-card">
+    <div class="mini-seg" role="group" aria-label="Chart type">
+      <button data-chart="bar" data-screen="${screen}" class="${mode === 'bar' ? 'on' : ''}" aria-label="Daily bars">
+        <svg viewBox="0 0 24 24"><path d="M6 20v-6M12 20V6M18 20v-9"/></svg></button>
+      <button data-chart="pie" data-screen="${screen}" class="${mode === 'pie' ? 'on' : ''}" aria-label="By category">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 4v8l6 5"/></svg></button>
+    </div>
+    ${mode === 'pie' ? pieHtml() : barsHtml()}
+  </div>`;
+}
 
 function toast(msg) {
   const t = $('#toast');
@@ -118,15 +133,7 @@ function renderToday() {
       <div class="amount">${money(sum(state.txns.filter(x => x.date === t)))}</div>
       <div class="sub">This week ${money(sum(recent))} · This month ${money(sum(inRange(ps, pe)))}</div>
     </div>
-    <div class="group chart-card">
-      <div class="mini-seg" role="group" aria-label="Chart type">
-        <button data-chart="bar" class="${chartPref.get() === 'bar' ? 'on' : ''}" aria-label="Daily bars">
-          <svg viewBox="0 0 24 24"><path d="M6 20v-6M12 20V6M18 20v-9"/></svg></button>
-        <button data-chart="pie" class="${chartPref.get() === 'pie' ? 'on' : ''}" aria-label="By category">
-          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 4v8l6 5"/></svg></button>
-      </div>
-      ${chartPref.get() === 'pie' ? pie(recent) : bars(week, t)}
-    </div>
+    ${chartCard('today', () => bars(week, t), () => pie(recent, '7 days'))}
     ${recent.length ? groupedByDay(recent)
       : `<div class="empty">No payments in the last 7 days.<br>Tap <b>Import</b> to sync Gmail or add a statement.</div>`}`;
 }
@@ -172,8 +179,10 @@ function renderMonth() {
           <div class="bar"><i style="width:${(c.total / max) * 100}%;background:${c.color}"></i></div>
         </span>
       </button>`).join('')}</div>
-    <div class="section-header">Every day</div>
-    <div class="group">${bars(days)}<div class="chart-axis"><span>${new Date(s).getDate()}</span><span>${new Date(days[days.length - 1] || e).getDate()}</span></div></div>
+    <div class="section-header">${chartPref.get('month') === 'pie' ? 'Share by category' : 'Every day'}</div>
+    ${chartCard('month',
+      () => `${bars(days)}<div class="chart-axis"><span>${new Date(s).getDate()}</span><span>${new Date(days[days.length - 1] || e).getDate()}</span></div>`,
+      () => pie(list, state.offset === 0 ? 'this month' : 'month'))}
     <div class="section-header">By payment method</div>
     <div class="group">${byAcc.map(x => `
       <div class="row"><span class="main">${ACCOUNT[x.a]}</span><span class="value">${money(x.total)}</span>
@@ -386,7 +395,7 @@ document.addEventListener('click', async e => {
   if (!el) return;
   if (el.classList.contains('sheet-backdrop')) return closeSheet();
   const d = el.dataset;
-  if (d.chart) { chartPref.set(d.chart); return render(); }
+  if (d.chart) { chartPref.set(d.screen, d.chart); return render(); }
   if (d.tab) { state.tab = d.tab; state.offset = 0; closeSheet(); window.scrollTo(0, 0); return render(); }
   if (d.action) return act(d.action);
   if (d.txn) return txnSheet(d.txn);
@@ -437,5 +446,8 @@ document.addEventListener('change', async e => {
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
     navigator.serviceWorker.register('sw.js');
   }
-  render();
+  await render();
+  // Guard: right after an update, an old cached import.js can load once alongside the new app.js.
+  const recovered = typeof retryUnrecognised === 'function' ? await retryUnrecognised() : 0;
+  if (recovered) { toast(`${recovered} unrecognised message${recovered > 1 ? 's' : ''} now read with updated patterns`); render(); }
 })();

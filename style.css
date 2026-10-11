@@ -4,14 +4,17 @@
   --card: #ffffff;        /* secondarySystemGroupedBackground */
   --fill: #e5e5ea;        /* systemGray5 */
   --label: #000000;
-  --label2: rgba(60, 60, 67, 0.6);
+  --label2: rgba(60, 60, 67, 0.78);   /* Apple uses 0.6 (~3.4:1); darkened to pass 4.5:1 for easy reading */
   --label3: rgba(60, 60, 67, 0.3);
   --sep: rgba(60, 60, 67, 0.29);
-  --blue: #007aff;
-  --green: #34c759;
-  --red: #ff3b30;
+  /* Apple's "Increase Contrast" variants: the standard ones are too faint as text on white (<4.5:1). */
+  --blue: #0062cc;
+  --green: #1b6e30;
+  --red: #d70015;
   --tabbar: rgba(249, 249, 249, 0.94);
   --radius: 10px;
+  /* Tells the browser which theme its own controls (dropdown lists, date picker, scrollbars) should use. */
+  color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -26,6 +29,7 @@
     --green: #30d158;
     --red: #ff453a;
     --tabbar: rgba(22, 22, 22, 0.94);
+    color-scheme: dark;
   }
 }
 
@@ -74,7 +78,8 @@ button.row:active { background: var(--fill); }
 .row .title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .row .subtitle { font-size: 13px; color: var(--label2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .row .value { font-variant-numeric: tabular-nums; white-space: nowrap; }
-.row .value.muted, .row .chev { color: var(--label3); }
+.row .value.muted { color: var(--label2); }   /* real information: must stay readable */
+.row .chev { color: var(--label3); }          /* decoration only */
 .row .action { color: var(--blue); }
 .row .danger { color: var(--red); }
 .icon {
@@ -144,6 +149,9 @@ button.row:active { background: var(--fill); }
 .sheet h2 { font-size: 22px; font-weight: 700; margin: 6px 4px 2px; }
 .sheet .big { font-size: 34px; font-weight: 700; margin: 0 4px 4px; font-variant-numeric: tabular-nums; }
 .row select { border: 0; background: none; color: var(--label2); text-align: right; direction: rtl; appearance: none; -webkit-appearance: none; }
+/* The closed select shows muted text; the opened list must use full-contrast theme colors. */
+select option { color: var(--label); background-color: var(--card); direction: ltr; }
+input::placeholder { color: var(--label3); }
 .row input { border: 0; background: none; text-align: right; color: var(--label2); width: 50%; outline: none; }
 pre.raw { white-space: pre-wrap; font: 12px/1.4 ui-monospace, Menlo, monospace; color: var(--label2); padding: 12px 16px; margin: 0; }
 

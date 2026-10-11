@@ -64,6 +64,31 @@ async function addUnrecognised(source, date, text) {
   await DB.set('unrecognised', list.slice(0, 200));
 }
 
+// After a pattern update, messages stuck in Unrecognised may now parse. Re-try them all (runs on app open).
+async function retryUnrecognised() {
+  const list = (await DB.get('unrecognised')) || [];
+  if (!list.length) return 0;
+  const rules = (await DB.get('rules')) || {};
+  const txns = [], orders = [], still = [];
+  for (const u of list) {
+    let r = null;
+    if (u.source === 'hdfc-email') r = parseHdfcAlert(u.text, rules);
+    else if (u.source === 'sms') r = parseHdfcSms(u.text, rules);
+    else if (u.source === 'swiggy-email') {
+      const [subject, ...body] = u.text.split('\n\n');           // stored as "subject\n\nbody"
+      r = parseSwiggyEmail(body.join('\n\n'), subject, u.date);
+    }
+    if (r && r !== 'unrecognised') (u.source === 'swiggy-email' ? orders : txns).push(r);
+    else still.push(u);
+  }
+  if (still.length === list.length) return 0;
+  await DB.putMany('orders', orders);
+  await mergeTxns(txns);
+  await linkSwiggy();
+  await DB.set('unrecognised', still);
+  return list.length - still.length;
+}
+
 // ---------- files ----------
 let pdfjsReady;
 function loadPdfJs() {

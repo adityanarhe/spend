@@ -33,6 +33,16 @@ a. When in India (Toll free): 1800 258 6161`),
         { account: 'hdfc_upi', amount: 80, name: 'City Metro Rail Corporation Ltd', date: '2026-10-08', ref: '1234509876', category: 'Transport' }],
       ['UPI alert email (REAL format, with digits, no bracket name)', () => parseHdfcAlert('Rs.450.00 is debited from your account ending 0512 towards VPA swiggy@icici on 08-10-26.\n\nUPI transaction reference no.: 123450987612.'),
         { amount: 450, name: 'swiggy@icici', ref: '123450987612', category: 'Food' }],
+      ['UPI to a person (REAL format, anonymised)', () => parseHdfcAlert(`❗  You have done a UPI txn. Check details!
+
+Dear Customer,
+Greetings from HDFC Bank!
+Rs.290.00 is debited from your account ending 05xx towards VPA q9000000xx@ybl (Person Name) on 28-08-26.
+UPI transaction reference no.: 600000000xxx.`),
+        { account: 'hdfc_upi', amount: 290, name: 'Person Name', date: '2026-08-28', ref: '600000000', category: 'People' }],
+      ['UPI alert after HTML→text (invisible chars, odd spacing)', () => parseHdfcAlert(
+        'Rs. 290.00​ is  debited from your account\nending 05xx towards VPA\n9876543210@ybl (Person Name)\n on 28-08-26.'),
+        { amount: 290, name: 'Person Name', date: '2026-08-28', category: 'People' }],
       ['UPI alert, Instamart', () => parseHdfcAlert('Rs.1,212.50 has been debited from account **1234 to VPA swiggyinstamart@icici Swiggy Instamart on 07-10-26.'),
         { amount: 1212.5, category: 'Groceries', date: '2026-10-07' }],
       ['CC alert email (older)', () => parseHdfcAlert('Thank you for using your HDFC Bank Credit Card ending 4321 for Rs 2,999.00 at AMAZON PAY INDIA on 05-10-2026 21:14:09. Authorization code:- 123456'),
