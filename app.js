@@ -59,14 +59,58 @@ function groupedByDay(list) {
   }).join('');
 }
 
-function bars(days, highlight) {
+// Compact amounts for chart labels: ₹450, ₹1.2k, ₹14k, ₹1.3L
+const short = n => n >= 1e5 ? `₹${(n / 1e5).toFixed(1)}L` : n >= 1e4 ? `₹${Math.round(n / 1e3)}k`
+  : n >= 1e3 ? `₹${(n / 1e3).toFixed(1)}k` : `₹${Math.round(n)}`;
+
+// Daily bars. Each day is a tap target (opens that day's payments).
+// Week: every day's amount on top. Month: too many days for labels, so the highest day is labelled
+// and a dashed line marks the daily average, so you can see which days ran above or below normal.
+const PLOT = 104;   // px of bar height; space above it holds the labels
+function bars(days, today) {
   const vals = days.map(d => sum(state.txns.filter(t => t.date === d)));
-  const max = Math.max(...vals, 1);
-  return `<div class="chart">${days.map((d, i) => `
-    <div class="col${highlight && d !== highlight ? ' dim' : ''}" title="${d}: ${money(vals[i])}">
-      <i style="height:${(vals[i] / max) * 100}%"></i>
-      ${days.length <= 7 ? `<span>${new Date(d).toLocaleDateString('en-IN', { weekday: 'narrow' })}</span>` : ''}
-    </div>`).join('')}</div>`;
+  const week = days.length <= 7;
+  const avg = vals.reduce((a, b) => a + b, 0) / (days.length || 1);
+  // Week: label every day. Month: bars are thin, so label up to 3 above-average days that aren't neighbours.
+  const labelled = new Set();
+  if (week) vals.forEach((v, i) => v > 0 && labelled.add(i));
+  else vals.map((v, i) => [v, i]).filter(([v]) => v > avg).sort((a, b) => b[0] - a[0])
+    .forEach(([, i]) => { if (labelled.size < 3 && ![...labelled].some(j => Math.abs(j - i) < 3)) labelled.add(i); });
+  // One huge day (e.g. a ₹14k purchase) would flatten every normal day into a stub. If the biggest day is
+  // over 3x the next one, scale to the normal days and draw the big one as a "broken" bar; its label keeps the real amount.
+  const [first = 0, second = 0] = [...vals].sort((a, b) => b - a);
+  const clipAt = second > 0 && first > 3 * second ? second * 1.6 : 0;
+  const max = Math.max(clipAt || first, 1);
+  const xLabel = (d, i) => {
+    const date = new Date(d);
+    if (week) return date.toLocaleDateString('en-IN', { weekday: 'narrow' });
+    const n = date.getDate();
+    return n === 1 || n % 5 === 0 || i === days.length - 1 ? n : '';
+  };
+  const h = v => v <= 0 ? 0 : Math.max(3, Math.min(v / max, 1) * PLOT);
+  return `<div class="chart ${week ? 'week' : 'month'}">
+    ${avg > 0 ? `<div class="chart-note">avg ${short(avg)}/day</div>` : ''}
+    <div class="plot">
+      ${avg > 0 && avg < max ? `<div class="avg" style="bottom:${(avg / max) * PLOT}px"></div>` : ''}
+      ${days.map((d, i) => `
+        <button class="col" data-day="${d}" aria-label="${esc(fmtDay(d))}: ${money(vals[i])}">
+          ${labelled.has(i) ? `<span class="amt">${short(vals[i])}</span>` : ''}
+          <i class="${clipAt && vals[i] > max ? 'clipped' : ''}" style="height:${h(vals[i])}px"></i>
+        </button>`).join('')}
+    </div>
+    <div class="xaxis">${days.map((d, i) => `<span class="${d === today ? 'now' : ''}">${xLabel(d, i)}</span>`).join('')}</div>
+  </div>`;
+}
+
+function daySheet(date) {
+  const list = state.txns.filter(t => t.date === date);
+  const long = new Date(date).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' });
+  const rel = ['Today', 'Yesterday'].includes(fmtDay(date)) ? `${fmtDay(date)} · ` : '';
+  openSheet(`<h2>${esc(rel + long)}</h2>
+    <div class="big">${money(sum(list))}</div>
+    ${list.length ? `<div class="section-header">${list.length} payment${list.length > 1 ? 's' : ''}</div>
+      <div class="group">${list.map(txnRow).join('')}</div>`
+      : '<div class="empty">No payments on this day.</div>'}`);
 }
 
 // Donut of spend by category, drawn with a CSS conic-gradient (no chart library).
@@ -181,7 +225,7 @@ function renderMonth() {
       </button>`).join('')}</div>
     <div class="section-header">${chartPref.get('month') === 'pie' ? 'Share by category' : 'Every day'}</div>
     ${chartCard('month',
-      () => `${bars(days)}<div class="chart-axis"><span>${new Date(s).getDate()}</span><span>${new Date(days[days.length - 1] || e).getDate()}</span></div>`,
+      () => bars(days, today()),
       () => pie(list, state.offset === 0 ? 'this month' : 'month'))}
     <div class="section-header">By payment method</div>
     <div class="group">${byAcc.map(x => `
@@ -391,11 +435,12 @@ async function act(action) {
 }
 
 document.addEventListener('click', async e => {
-  const el = e.target.closest('[data-tab],[data-chart],[data-action],[data-txn],[data-cat],[data-merchant],[data-delete],[data-fix],[data-dismiss],.sheet-backdrop');
+  const el = e.target.closest('[data-tab],[data-chart],[data-action],[data-txn],[data-cat],[data-merchant],[data-delete],[data-fix],[data-dismiss],[data-day],.sheet-backdrop');
   if (!el) return;
   if (el.classList.contains('sheet-backdrop')) return closeSheet();
   const d = el.dataset;
   if (d.chart) { chartPref.set(d.screen, d.chart); return render(); }
+  if (d.day) return daySheet(d.day);
   if (d.tab) { state.tab = d.tab; state.offset = 0; closeSheet(); window.scrollTo(0, 0); return render(); }
   if (d.action) return act(d.action);
   if (d.txn) return txnSheet(d.txn);
