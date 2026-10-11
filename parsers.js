@@ -48,6 +48,15 @@ const P = {
     return `${yr}-${String(mon).padStart(2, '0')}-${m[1].padStart(2, '0')}`;
   },
 
+  // A readable merchant name from a bare UPI ID: "uberindiasystem100xxx.rzp@rxairtel" → "UBERINDIASYSTEM".
+  // Drops the @bank part, payment-gateway suffixes (.rzp, .payu, ...) and trailing numbers. Phone-number IDs stay as-is.
+  vpaName(vpa) {
+    const local = String(vpa).split('@')[0]
+      .replace(/\.(rzp|payu|cf|pg|razorpay|billdesk|paytm|ccavenue|juspay|cashfree)$/i, '')
+      .replace(/\d[\dx]*$/i, '').replace(/[._-]+/g, ' ').trim();
+    return local.length >= 3 ? local.toUpperCase() : vpa;
+  },
+
   // HTML emails converted to text carry invisible characters (zero-width, non-breaking spaces) and
   // odd spacing/line breaks. Patterns match words, so flatten all of that to single plain spaces first.
   clean: text => String(text).replace(/[​-‏⁠﻿­]/g, '').replace(/\s+/g, ' ').trim(),
@@ -80,7 +89,14 @@ const ALERT_PATTERNS = [
     // Also accepts the older wording: "... has been debited from account **1234 to VPA swiggy@icici SWIGGY on 08-10-25."
     account: 'hdfc_upi',
     re: new RegExp(String.raw`${AMT}\s+(?:has been|is)\s+debited from (?:your )?(?:a\/c|account)(?:\s+ending)?\s*[*Xx]*\w{0,4}\s+(?:to|towards)\s+VPA\s+(\S+)(?:\s+\(([^)]+)\)|\s+(.+?))?\s+on\s+${DATE}`, 'is'),
-    map: m => ({ amount: P.money(m[1]), vpa: m[2], name: m[3] || m[4] || m[2], date: P.date(m[5]) }),
+    map: m => ({ amount: P.money(m[1]), vpa: m[2], name: m[3] || m[4] || P.vpaName(m[2]), date: P.date(m[5]) }),
+  },
+  { // RuPay credit card used over UPI (CONFIRMED from real email):
+    //   "Rs.30.00 has been debited from your RuPay Credit Card (ending 1234) Paid to uberindiasystem100xxx.rzp@rxairtel Date: 09-10-26"
+    // Credit card money, so its own account — not the bank account's UPI.
+    account: 'hdfc_rupay',
+    re: new RegExp(String.raw`${AMT}\s+(?:has been|is)\s+debited from your RuPay Credit Card\s*\(?\s*ending\s*[*Xx]*\w{0,4}\s*\)?\s+Paid to\s+(\S+)\s+Date:?\s*${DATE}`, 'is'),
+    map: m => ({ amount: P.money(m[1]), vpa: m[2], name: P.vpaName(m[2]), date: P.date(m[3]) }),
   },
   { // CC (older): "Thank you for using your HDFC Bank Credit Card ending 1234 for Rs 450.00 at SWIGGY on 08-10-2025 12:34:56"
     account: 'hdfc_cc',

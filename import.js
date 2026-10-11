@@ -1,7 +1,9 @@
 // Getting data in: merge duplicates, link Swiggy orders to payments, read statement/backup files.
 
-// UPI payments and other bank debits come out of the same bank account, so they dedupe against each other.
-const sameAccount = (a, b) => a === b || (a !== 'hdfc_cc' && b !== 'hdfc_cc');
+// UPI payments and other debits from the savings account are one pot of money, so they dedupe against each other.
+// Each card (Visa/Master credit card, RuPay credit card) is its own account.
+const BANK = ['hdfc_upi', 'hdfc_bank'];
+const sameAccount = (a, b) => a === b || (BANK.includes(a) && BANK.includes(b));
 const dayDiff = (a, b) => Math.abs((new Date(a) - new Date(b)) / 864e5);
 
 // The same payment can arrive as an email alert, an SMS and a statement row. Keep one record.

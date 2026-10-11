@@ -1,5 +1,5 @@
 // Caches the app's own files so it opens offline. Your data lives in IndexedDB, not here.
-const CACHE = 'spend-v5';
+const CACHE = 'spend-v6';
 const FILES = ['./', 'index.html', 'style.css', 'db.js', 'parsers.js', 'import.js', 'gmail.js', 'app.js',
   'manifest.json', 'icons/icon-180.png', 'icons/icon-192.png'];
 

@@ -3,7 +3,7 @@ const $ = s => document.querySelector(s);
 const inr = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 });
 const money = n => inr.format(Math.round(n));
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
-const ACCOUNT = { hdfc_cc: 'Credit card', hdfc_upi: 'UPI', hdfc_bank: 'Bank', other: 'Other' };
+const ACCOUNT = { hdfc_cc: 'Credit card', hdfc_rupay: 'RuPay card', hdfc_upi: 'UPI', hdfc_bank: 'Bank', other: 'Other' };
 const ORIGIN = { alert: 'Email alert', sms: 'SMS', statement: 'Statement', manual: 'CSV import', fix: 'Fixed by you' };
 const cat = name => CATEGORIES.find(c => c.name === name) || CATEGORIES.find(c => c.name === 'Other');
 const counts = t => !cat(t.category).excluded;
@@ -345,7 +345,7 @@ async function fixSheet(id) {
   const amt = (u.text.match(/(?:Rs\.?|INR|₹)\s?([\d,]+(?:\.\d{1,2})?)/i) || [])[1];
   const dm = u.text.match(new RegExp(DATE));
   const date = (dm && P.date(dm[1])) || u.date || today();
-  const account = /credit card/i.test(u.text) ? 'hdfc_cc' : /upi|vpa/i.test(u.text) ? 'hdfc_upi' : 'hdfc_bank';
+  const account = /rupay/i.test(u.text) ? 'hdfc_rupay' : /credit card/i.test(u.text) ? 'hdfc_cc' : /upi|vpa/i.test(u.text) ? 'hdfc_upi' : 'hdfc_bank';
   const opts = (list, sel) => list.map(([v, l]) => `<option value="${esc(v)}"${v === sel ? ' selected' : ''}>${esc(l)}</option>`).join('');
   openSheet(`<h2>Fix payment</h2>
     <div class="group" style="margin-top:8px"><pre class="raw">${esc(u.text.slice(0, 600))}</pre></div>

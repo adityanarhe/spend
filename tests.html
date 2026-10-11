@@ -32,7 +32,25 @@ If you did not authorize this transaction, please report it immediately at:
 a. When in India (Toll free): 1800 258 6161`),
         { account: 'hdfc_upi', amount: 80, name: 'City Metro Rail Corporation Ltd', date: '2026-10-08', ref: '1234509876', category: 'Transport' }],
       ['UPI alert email (REAL format, with digits, no bracket name)', () => parseHdfcAlert('Rs.450.00 is debited from your account ending 0512 towards VPA swiggy@icici on 08-10-26.\n\nUPI transaction reference no.: 123450987612.'),
-        { amount: 450, name: 'swiggy@icici', ref: '123450987612', category: 'Food' }],
+        { amount: 450, name: 'SWIGGY', ref: '123450987612', category: 'Food' }],
+      ['RuPay credit card over UPI (REAL format, anonymised)', () => parseHdfcAlert(`Dear Customer,
+
+Greetings from HDFC Bank!
+
+We're sharing this alert to help you quickly check a recent UPI transaction made using your RuPay Credit Card.
+
+Transaction Details:
+Rs.30.00 has been debited from your RuPay Credit Card (ending 12xx)
+Paid to uberindiasystem100xxx.rzp@rxairtel
+Date: 09-10-26
+UPI Transaction Reference Number: 100000000xxx
+
+Important Note:
+If you made this transaction, no action is needed.`),
+        { account: 'hdfc_rupay', amount: 30, name: 'UBERINDIASYSTEM', date: '2026-10-09', ref: '100000000', category: 'Transport' }],
+      ['Names from bare UPI IDs', () => [P.vpaName('uberindiasystem100xxx.rzp@rxairtel'), P.vpaName('swiggy@icici'),
+          P.vpaName('zepto.payu@axisbank'), P.vpaName('9876543210@ybl'), P.vpaName('q90000000xx@ybl')],
+        null, r => r.join('|') === 'UBERINDIASYSTEM|SWIGGY|ZEPTO|9876543210@ybl|q90000000xx@ybl'],
       ['UPI to a person (REAL format, anonymised)', () => parseHdfcAlert(`❗  You have done a UPI txn. Check details!
 
 Dear Customer,
