@@ -53,6 +53,12 @@ select, input { font: inherit; color: var(--label); }
 .nav button { color: var(--blue); font-size: 17px; padding: 4px 0; }
 .large-title { font-size: 34px; font-weight: 700; letter-spacing: 0.37px; margin: 4px 0 8px; }
 
+/* Month title = picker: the native select sits invisibly on top, so tapping the title opens the phone's picker */
+.title-picker { position: relative; display: inline-block; max-width: 100%; }
+.title-picker .chevron { width: 22px; height: 22px; vertical-align: 2px; fill: none; stroke: var(--blue); stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+.title-picker select { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; font-size: 16px; /* 16px stops iOS zooming in */ }
+.title-picker:active .large-title { opacity: .6; }
+
 /* Hero number */
 .hero { margin: 4px 4px 20px; }
 .hero .label { font-size: 13px; color: var(--label2); text-transform: uppercase; letter-spacing: -0.08px; }

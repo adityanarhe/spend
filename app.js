@@ -183,6 +183,21 @@ function renderToday() {
 }
 
 // ---------- Month ----------
+// The large title doubles as a month picker: a native <select> laid invisibly over it, so the phone
+// shows its own picker (scroll wheel on iPhone). Lists every month from your first payment to now, with totals.
+function monthPicker(label) {
+  const first = state.txns.reduce((m, t) => (t.date < m ? t.date : m), today());
+  const options = [];
+  for (let o = 0; o > -60; o--) {
+    const [s, e, l] = period(o);
+    options.push(`<option value="${o}"${o === state.offset ? ' selected' : ''}>${esc(l)} · ${money(sum(inRange(s, e)))}</option>`);
+    if (s <= first) break;
+  }
+  return `<label class="title-picker">
+    <h1 class="large-title">${esc(label)} <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></h1>
+    <select data-month aria-label="Choose month">${options.join('')}</select>
+  </label>`;
+}
 function renderMonth() {
   const [s, e, label] = period(state.offset);
   const [ls, le] = period(state.offset - 1);
@@ -203,11 +218,8 @@ function renderMonth() {
   const max = byCat[0]?.total || 1;
 
   return `
-    <div class="nav">
-      <button data-action="prev">‹ Previous</button>
-      ${state.offset < 0 ? '<button data-action="next">Next ›</button>' : '<span></span>'}
-    </div>
-    <h1 class="large-title">${esc(label)}</h1>
+    <div class="nav"></div>
+    ${monthPicker(label)}
     <div class="hero">
       <div class="label">Total spent</div>
       <div class="amount">${money(total)}</div>
@@ -429,8 +441,7 @@ async function act(action) {
   else if (action === 'wipe') {
     if (!confirm('Delete every payment, order and setting on this device? Export a backup first if unsure.')) return;
     await DB.importAll({ app: 'spend', txns: [], orders: [], kv: { rules: {}, sync: null, unrecognised: [], fixes: [] } });
-  } else if (action === 'prev') state.offset--;
-  else if (action === 'next') state.offset++;
+  }
   await render();
 }
 
@@ -473,6 +484,7 @@ document.addEventListener('submit', async e => {
 });
 
 document.addEventListener('change', async e => {
+  if ('month' in e.target.dataset) { state.offset = Number(e.target.value); window.scrollTo(0, 0); return render(); }
   if (e.target.dataset.txnCat) { await setCategory(e.target.dataset.txnCat, e.target.value); return txnSheet(e.target.dataset.txnCat); }
   if (e.target.dataset.setting) {
     const settings = (await DB.get('settings')) || {};
