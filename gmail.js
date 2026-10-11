@@ -3,42 +3,51 @@
 const GMAIL = 'https://gmail.googleapis.com/gmail/v1/users/me';
 // Instamart mails from its own domain (confirmed: noreply@instamart.in), not swiggy.in.
 const SENDERS = ['alerts@hdfcbank.net', 'alerts@hdfcbank.bank.in', 'noreply@swiggy.in', 'no-reply@swiggy.in', 'noreply@instamart.in'];
-let accessToken = null, tokenExpiry = 0;
+// Sign-in uses a full-page redirect, not a popup: iPhone home-screen apps block or break popups.
+// Tap Sync → Google's page → Google sends you back here with a 1-hour read-only pass in the URL
+// fragment (#access_token=…). Fragments never reach any server; we read it and wipe it from the URL.
+// The pass lives in sessionStorage only (gone when the app is closed).
+const session = {
+  get: k => { try { return sessionStorage.getItem(k); } catch { return null; } },
+  set: (k, v) => { try { sessionStorage.setItem(k, v); } catch {} },
+  del: k => { try { sessionStorage.removeItem(k); } catch {} },
+};
+let accessToken = session.get('gmail-token');
+let tokenExpiry = Number(session.get('gmail-expiry')) || 0;
 
-function loadGis() {
-  if (window.google?.accounts?.oauth2) return Promise.resolve();
-  return new Promise((resolve, reject) => {
-    const s = document.createElement('script');
-    s.src = 'https://accounts.google.com/gsi/client';
-    s.onload = resolve;
-    s.onerror = () => reject(new Error('Could not reach Google sign-in.'));
-    document.head.appendChild(s);
+// Must exactly match an "Authorized redirect URI" in Google Cloud: https://adityanarhe.github.io/spend/ and http://localhost:5173/
+const redirectUri = () => location.origin + location.pathname;
+
+function getToken(clientId) {
+  if (accessToken && Date.now() < tokenExpiry) return Promise.resolve(accessToken);
+  const state = crypto.getRandomValues(new Uint32Array(2)).join('-');   // proves the reply answers our own request
+  session.set('gmail-state', state);
+  location.href = 'https://accounts.google.com/o/oauth2/v2/auth?' + new URLSearchParams({
+    client_id: clientId, redirect_uri: redirectUri(), response_type: 'token',
+    scope: 'https://www.googleapis.com/auth/gmail.readonly', include_granted_scopes: 'true', state,
   });
+  return new Promise(() => {});                          // page is leaving; sync resumes after the redirect back
 }
 
-// Must be called from a tap (iOS blocks sign-in popups otherwise).
-async function getToken(clientId) {
-  if (accessToken && Date.now() < tokenExpiry) return accessToken;
-  await loadGis();
-  return new Promise((resolve, reject) => {
-    const client = google.accounts.oauth2.initTokenClient({
-      client_id: clientId,
-      scope: 'https://www.googleapis.com/auth/gmail.readonly',
-      callback: r => {
-        if (r.error) return reject(new Error(r.error_description || r.error));
-        accessToken = r.access_token;
-        tokenExpiry = Date.now() + (r.expires_in - 60) * 1000;
-        resolve(accessToken);
-      },
-      error_callback: e => reject(new Error(e.message || 'Sign-in cancelled')),
-    });
-    client.requestAccessToken({ prompt: '' });
-  });
+// Called on app start. Returns 'ok' if we just came back from Google with a pass, an error message, or null.
+function handleAuthRedirect() {
+  if (!location.hash.includes('access_token') && !location.hash.includes('error')) return null;
+  const p = new URLSearchParams(location.hash.slice(1));
+  history.replaceState(null, '', location.pathname);     // wipe the token from the address bar / history
+  const expected = session.get('gmail-state');
+  session.del('gmail-state');
+  if (p.get('error')) return p.get('error') === 'access_denied' ? 'Gmail access was not allowed' : `Google sign-in error: ${p.get('error')}`;
+  if (!expected || p.get('state') !== expected) return 'Sign-in reply did not match this app. Tap Sync again.';
+  accessToken = p.get('access_token');
+  tokenExpiry = Date.now() + (Number(p.get('expires_in')) - 60) * 1000;
+  session.set('gmail-token', accessToken);
+  session.set('gmail-expiry', String(tokenExpiry));
+  return 'ok';
 }
 
 async function api(path) {
   const res = await fetch(`${GMAIL}/${path}`, { headers: { Authorization: `Bearer ${accessToken}` } });
-  if (res.status === 401) { accessToken = null; throw new Error('Gmail session expired. Tap Sync again.'); }
+  if (res.status === 401) { accessToken = null; session.del('gmail-token'); throw new Error('Gmail session expired. Tap Sync again.'); }
   if (!res.ok) throw new Error(`Gmail error ${res.status}`);
   return res.json();
 }

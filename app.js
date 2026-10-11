@@ -450,4 +450,10 @@ document.addEventListener('change', async e => {
   // Guard: right after an update, an old cached import.js can load once alongside the new app.js.
   const recovered = typeof retryUnrecognised === 'function' ? await retryUnrecognised() : 0;
   if (recovered) { toast(`${recovered} unrecognised message${recovered > 1 ? 's' : ''} now read with updated patterns`); render(); }
+  // Back from Google's sign-in page: finish the sync the user tapped.
+  const auth = typeof handleAuthRedirect === 'function' ? handleAuthRedirect() : null;
+  if (auth === 'ok') {
+    try { toast('Syncing…'); toast(await syncGmail(toast)); } catch (e) { toast(e.message); }
+    render();
+  } else if (auth) toast(auth);
 })();
